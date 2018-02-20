@@ -1,0 +1,9 @@
+{{range $i, $svc := .services}} {{ $svcName := $svc.Name }}
+frontend {{$svc.Name}}
+    bind {{$svc.LoadBalancerIP}}:{{$svc.FrontendPort}}
+    default_backend {{$svc.Name}}
+
+backend {{$svc.Name}}
+    balance roundrobin
+    {{range $j, $ep := $svc.Endpoints}}server {{$svc.Name}}_{{$j}} {{$ep}} check port {{$svc.BackendPort}} inter 1s fall 3{{end}}
+{{end}}
