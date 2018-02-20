@@ -27,8 +27,8 @@ type Service struct {
 	Name           string
 	Namespace      string
 	Endpoints      []string
-	BackendPort    int32
-	FrontendPort   int32
+	Port           int32
+	TargetPort     int32
 	LoadBalancerIP string
 }
 
@@ -108,8 +108,8 @@ func getServices(client *k8s.Client) (services []Service) {
 			cService := Service{
 				Name:           getServiceNameForLBRule(s, *servicePort.Port),
 				Endpoints:      ep,
-				BackendPort:    *servicePort.Port,
-				FrontendPort:   *servicePort.Port,
+				Port:           *servicePort.Port,
+				TargetPort:     *servicePort.TargetPort.IntVal,
 				LoadBalancerIP: *s.Spec.LoadBalancerIP,
 			}
 
@@ -127,10 +127,10 @@ func configureServices(services []Service, tmplFile string, configFile string) {
 	for n, service := range services {
 		log.Infof("-+= Service #%v", n)
 		log.Infof(" |--= Name : %v", service.Name)
-		log.Infof(" |--= Endpoints : %v", service.Endpoints)
-		log.Infof(" |--= BackendPort : %v", service.BackendPort)
-		log.Infof(" |--= FrontendPort : %v", service.FrontendPort)
-		log.Infof(" `--= LoadBalancerIP : %v", service.LoadBalancerIP)
+		log.Infof(" |--= Port : %v", service.Port)
+		log.Infof(" |--= TargetPort : %v", service.TargetPort)
+		log.Infof(" |--= LoadBalancerIP : %v", service.LoadBalancerIP)
+		log.Infof(" `--= Endpoints : %v", service.Endpoints)
 	}
 
 	t, err := template.ParseFiles(tmplFile)
