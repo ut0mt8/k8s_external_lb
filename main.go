@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"github.com/ericchiang/k8s"
 	apiv1 "github.com/ericchiang/k8s/api/v1"
 	"github.com/ghodss/yaml"
+	"github.com/namsral/flag"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
@@ -16,6 +16,7 @@ import (
 	"time"
 )
 
+var kubeConfig string
 var tmplFile string
 var configFile string
 var reloadScript string
@@ -170,6 +171,7 @@ func configureServices(services []Service, tmplFile string, configFile string) {
 
 func init() {
 
+	flag.StringVar(&kubeConfig, "kubeConfig", os.Getenv("HOME") + "/.kube/config", "kubeconfig file to load")
 	flag.StringVar(&tmplFile, "tmplFile", "config.tmpl", "Template file to load")
 	flag.StringVar(&configFile, "configFile", "config.conf", "Configuration file to write")
 	flag.StringVar(&reloadScript, "reloadScript", "./reload.sh", "Reload script to launch")
@@ -183,8 +185,7 @@ func main() {
 
 	flag.Parse()
 
-	clientConfig := os.Getenv("HOME") + "/.kube/config"
-	client, err := loadClient(clientConfig)
+	client, err := loadClient(kubeConfig)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
@@ -195,7 +196,7 @@ func main() {
 
 	for t := range time.NewTicker(time.Duration(syncPeriod) * time.Second).C {
 
-		log.Infof("GetServices fired at %+v", t)
+		log.Debugf("GetServices fired at %+v", t)
 		newServices := getServices(client)
 
 		if !reflect.DeepEqual(newServices, currentServices) {
