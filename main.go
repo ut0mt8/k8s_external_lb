@@ -16,13 +16,14 @@ import (
 	"time"
 )
 
-var kubeConfig string
-var tmplFile string
-var configFile string
-var reloadScript string
-var syncPeriod int
-
-var log = logrus.New()
+type Config struct {
+	kubeConfig   string
+	tmplFile     string
+	configFile   string
+	reloadScript string
+	syncPeriod   int
+	debug        bool
+}
 
 type Service struct {
 	Name           string
@@ -33,6 +34,9 @@ type Service struct {
 	LoadBalancerIP string
 }
 
+var config Config
+var log = logrus.New()
+
 func loadClient(kubeconfigPath string) (*k8s.Client, error) {
 
 	data, err := ioutil.ReadFile(kubeconfigPath)
@@ -40,17 +44,20 @@ func loadClient(kubeconfigPath string) (*k8s.Client, error) {
 		return nil, fmt.Errorf("read kubeconfig: %v", err)
 	}
 
-	var config k8s.Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	var cfg k8s.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal kubeconfig: %v", err)
 	}
 
-	return k8s.NewClient(&config)
+	return k8s.NewClient(&cfg)
 }
 
-func getServiceEndpoints(client *k8s.Client, name string, namespace string, servicePort *apiv1.ServicePort) (endpoints []string) {
+func getServiceEndpoints(client *k8s.Client, name string, namespace string, servicePort *apiv1.ServicePort) (endpoints []string, err error) {
 
-	ep, _ := client.CoreV1().GetEndpoints(context.Background(), name, namespace)
+	ep, err := client.CoreV1().GetEndpoints(context.Background(), name, namespace)
+	if err != nil {
+		return nil, fmt.Errorf("Cannot get endpoints: %v", err)
+	}
 
 	if *ep.Metadata.Name == name && *ep.Metadata.Namespace == namespace {
 		for _, ss := range ep.Subsets {
@@ -68,19 +75,22 @@ func getServiceEndpoints(client *k8s.Client, name string, namespace string, serv
 			}
 
 		}
-		log.Debugf(" -> Found Endpoints: %v\n", endpoints)
+		log.Debugf(" -> Found Endpoints: %v", endpoints)
 	}
 
-	return
+	return endpoints, nil
 }
 
 func getServiceNameForLBRule(s *apiv1.Service, servicePort int32) string {
 	return fmt.Sprintf("%v_%v_%v", *s.Metadata.Namespace, *s.Metadata.Name, servicePort)
 }
 
-func getServices(client *k8s.Client) (services []Service) {
+func getServices(client *k8s.Client) (services []Service, err error) {
 
-	svcs, _ := client.CoreV1().ListServices(context.Background(), k8s.AllNamespaces)
+	svcs, err := client.CoreV1().ListServices(context.Background(), k8s.AllNamespaces)
+	if err != nil {
+        return nil, fmt.Errorf("Cannot list services: %v", err)
+    }
 
 	for _, s := range svcs.Items {
 
@@ -98,7 +108,12 @@ func getServices(client *k8s.Client) (services []Service) {
 
 		for _, servicePort := range s.Spec.Ports {
 
-			ep := getServiceEndpoints(client, *s.Metadata.Name, *s.Metadata.Namespace, servicePort)
+			ep, err := getServiceEndpoints(client, *s.Metadata.Name, *s.Metadata.Namespace, servicePort)
+			if err != nil {
+				log.Debugf(" - Cannot get service endpoints for service %v, port %v: %v", *s.Metadata.Name, servicePort, err)
+				log.Debugf(" - Dropped candidate : %+v", *s.Metadata.Name)
+				continue
+    		}
 
 			if len(ep) == 0 {
 				log.Debugf(" - No endpoints found for service %v, port %v", *s.Metadata.Name, servicePort)
@@ -120,7 +135,7 @@ func getServices(client *k8s.Client) (services []Service) {
 		}
 	}
 
-	return
+	return services, nil
 }
 
 func configureServices(services []Service, tmplFile string, configFile string) {
@@ -159,7 +174,7 @@ func configureServices(services []Service, tmplFile string, configFile string) {
 
 	log.Infof("Ready to reload proxy")
 
-	out, err := exec.Command(reloadScript).CombinedOutput()
+	out, err := exec.Command(config.reloadScript).CombinedOutput()
 	if err != nil {
 		log.Errorf("Error reloading proxy: %v\n%s", err, out)
 	} else {
@@ -171,11 +186,12 @@ func configureServices(services []Service, tmplFile string, configFile string) {
 
 func init() {
 
-	flag.StringVar(&kubeConfig, "kubeConfig", os.Getenv("HOME") + "/.kube/config", "kubeconfig file to load")
-	flag.StringVar(&tmplFile, "tmplFile", "config.tmpl", "Template file to load")
-	flag.StringVar(&configFile, "configFile", "config.conf", "Configuration file to write")
-	flag.StringVar(&reloadScript, "reloadScript", "./reload.sh", "Reload script to launch")
-	flag.IntVar(&syncPeriod, "syncPeriod", 10, "Period between update")
+	flag.StringVar(&config.kubeConfig, "kubeConfig", os.Getenv("HOME")+"/.kube/config", "kubeconfig file to load")
+	flag.StringVar(&config.tmplFile, "tmplFile", "config.tmpl", "Template file to load")
+	flag.StringVar(&config.configFile, "configFile", "config.conf", "Configuration file to write")
+	flag.StringVar(&config.reloadScript, "reloadScript", "./reload.sh", "Reload script to launch")
+	flag.IntVar(&config.syncPeriod, "syncPeriod", 10, "Period between update")
+	flag.BoolVar(&config.debug, "debug", false, "Enable debug messages")
 
 	log.Formatter = new(logrus.TextFormatter)
 	log.Level = logrus.InfoLevel
@@ -184,25 +200,34 @@ func init() {
 func main() {
 
 	flag.Parse()
+	if config.debug {
+		log.SetLevel(logrus.DebugLevel)
+	}
 
-	client, err := loadClient(kubeConfig)
+	client, err := loadClient(config.kubeConfig)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
 
 	log.Infof("Initial GetServices fired")
-	currentServices := getServices(client)
-	configureServices(currentServices, tmplFile, configFile)
+	currentServices, err := getServices(client)
+	if err != nil {
+		log.Fatalf("Failed initial GetServices: %v", err)
+	}
+	configureServices(currentServices, config.tmplFile, config.configFile)
 
-	for t := range time.NewTicker(time.Duration(syncPeriod) * time.Second).C {
+	for t := range time.NewTicker(time.Duration(config.syncPeriod) * time.Second).C {
 
 		log.Debugf("GetServices fired at %+v", t)
-		newServices := getServices(client)
+		newServices, err := getServices(client)
+		if err != nil {
+			log.Errorf("Failed GetServices: %v", err)
+		}
 
 		if !reflect.DeepEqual(newServices, currentServices) {
 			log.Infof("Services have changed, reload fired")
 			currentServices = newServices
-			configureServices(currentServices, tmplFile, configFile)
+			configureServices(currentServices, config.tmplFile, config.configFile)
 		}
 	}
 }
