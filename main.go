@@ -89,8 +89,8 @@ func getServices(client *k8s.Client) (services []Service, err error) {
 
 	svcs, err := client.CoreV1().ListServices(context.Background(), k8s.AllNamespaces)
 	if err != nil {
-        return nil, fmt.Errorf("Cannot list services: %v", err)
-    }
+		return nil, fmt.Errorf("Cannot list services: %v", err)
+	}
 
 	for _, s := range svcs.Items {
 
@@ -113,7 +113,7 @@ func getServices(client *k8s.Client) (services []Service, err error) {
 				log.Debugf(" - Cannot get service endpoints for service %v, port %v: %v", *s.Metadata.Name, servicePort, err)
 				log.Debugf(" - Dropped candidate : %+v", *s.Metadata.Name)
 				continue
-    		}
+			}
 
 			if len(ep) == 0 {
 				log.Debugf(" - No endpoints found for service %v, port %v", *s.Metadata.Name, servicePort)
