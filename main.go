@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/ericchiang/k8s"
-	apiv1 "github.com/ericchiang/k8s/api/v1"
+	corev1 "github.com/ericchiang/k8s/apis/core/v1"
 	"github.com/ghodss/yaml"
 	"github.com/namsral/flag"
 	"github.com/sirupsen/logrus"
@@ -52,9 +52,10 @@ func loadClient(kubeconfigPath string) (*k8s.Client, error) {
 	return k8s.NewClient(&cfg)
 }
 
-func getServiceEndpoints(client *k8s.Client, name string, namespace string, servicePort *apiv1.ServicePort) (endpoints []string, err error) {
+func getServiceEndpoints(client *k8s.Client, name string, namespace string, servicePort *corev1.ServicePort) (endpoints []string, err error) {
 
-	ep, err := client.CoreV1().GetEndpoints(context.Background(), name, namespace)
+	var ep corev1.Endpoints
+	err = client.Get(context.Background(), namespace, name, &ep)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get endpoints: %v", err)
 	}
@@ -81,13 +82,15 @@ func getServiceEndpoints(client *k8s.Client, name string, namespace string, serv
 	return endpoints, nil
 }
 
-func getServiceNameForLBRule(s *apiv1.Service, servicePort int32) string {
+func getServiceNameForLBRule(s *corev1.Service, servicePort int32) string {
 	return fmt.Sprintf("%v_%v_%v", *s.Metadata.Namespace, *s.Metadata.Name, servicePort)
 }
 
 func getServices(client *k8s.Client) (services []Service, err error) {
 
-	svcs, err := client.CoreV1().ListServices(context.Background(), k8s.AllNamespaces)
+	var svcs corev1.ServiceList
+	err = client.List(context.Background(), k8s.AllNamespaces, &svcs)
+
 	if err != nil {
 		return nil, fmt.Errorf("Cannot list services: %v", err)
 	}
