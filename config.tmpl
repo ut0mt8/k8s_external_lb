@@ -4,6 +4,6 @@ frontend {{$svc.Name}}
     default_backend {{$svc.Name}}
 
 backend {{$svc.Name}}
-    balance roundrobin
-    {{range $j, $ep := $svc.Endpoints}}server {{$svc.Name}}_{{$j}} {{$ep}} check port {{$svc.TargetPort}} inter 1s fall 3{{end}}
+    balance roundrobin{{range $j, $ep := $svc.Endpoints}}
+    server {{$svc.Name}}_{{$j}} {{$ep}} check port {{$svc.TargetPort}} inter 1s fall 3{{end}}
 {{end}}
