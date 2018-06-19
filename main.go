@@ -21,6 +21,7 @@ type Config struct {
 	tmplFile     string
 	configFile   string
 	reloadScript string
+	filterType   string
 	syncPeriod   int
 	debug        bool
 }
@@ -86,10 +87,16 @@ func getServiceNameForLBRule(s *corev1.Service, servicePort int32) string {
 	return fmt.Sprintf("%v_%v_%v", *s.Metadata.Namespace, *s.Metadata.Name, servicePort)
 }
 
-func getServices(client *k8s.Client) (services []Service, err error) {
+func getServices(client *k8s.Client, filter string) (services []Service, err error) {
 
 	var svcs corev1.ServiceList
-	err = client.List(context.Background(), k8s.AllNamespaces, &svcs)
+
+	ls := new(k8s.LabelSelector)
+	if filter != "" {
+		ls.Eq("lb_type", filter)
+	}
+
+	err = client.List(context.Background(), k8s.AllNamespaces, &svcs, ls.Selector())
 
 	if err != nil {
 		return nil, fmt.Errorf("Cannot list services: %v", err)
@@ -193,6 +200,7 @@ func init() {
 	flag.StringVar(&config.tmplFile, "tmplFile", "config.tmpl", "Template file to load")
 	flag.StringVar(&config.configFile, "configFile", "config.conf", "Configuration file to write")
 	flag.StringVar(&config.reloadScript, "reloadScript", "./reload.sh", "Reload script to launch")
+	flag.StringVar(&config.filterType, "filterType", "", "Filter services on lb_type label, default: none")
 	flag.IntVar(&config.syncPeriod, "syncPeriod", 10, "Period between update")
 	flag.BoolVar(&config.debug, "debug", false, "Enable debug messages")
 
@@ -213,7 +221,7 @@ func main() {
 	}
 
 	log.Infof("Initial GetServices fired")
-	currentServices, err := getServices(client)
+	currentServices, err := getServices(client, config.filterType)
 	if err != nil {
 		log.Fatalf("Failed initial GetServices: %v", err)
 	}
@@ -222,7 +230,7 @@ func main() {
 	for t := range time.NewTicker(time.Duration(config.syncPeriod) * time.Second).C {
 
 		log.Debugf("GetServices fired at %+v", t)
-		newServices, err := getServices(client)
+		newServices, err := getServices(client, config.filterType)
 		if err != nil {
 			log.Errorf("Failed GetServices: %v", err)
 		}
