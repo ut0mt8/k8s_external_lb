@@ -7,8 +7,12 @@ jobs:
 
     steps:
       - checkout
-      - run: go get -t -d -v ./...
-      - run: go build -v
+      - run:
+        name: Get and compile dependancies
+        command: go get -t -d -v ./...
+      - run:
+        name: Compile main program
+        command: go get 
       - store_artifacts:
           path: /go/bin
           destination: raw-bin
