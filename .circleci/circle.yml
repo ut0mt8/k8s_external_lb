@@ -1,0 +1,10 @@
+version: 2
+jobs:
+  build:
+    working_directory: /go/src/github.com/ut0mt8/k8s_external_lb
+    docker:
+      - image: circleci/golang:1.10.0
+
+    steps:
+      - checkout
+      - run: go build
