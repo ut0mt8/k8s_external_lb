@@ -1,2 +1,2 @@
 # k8s_external_lb
-Little go program to watch api-server and autogenerate proxy (nginx/haproxy) configuration files
+Small go program watching k8s api-server and autogenerate reverse proxy (nginx/haproxy/whatever) configuration files
